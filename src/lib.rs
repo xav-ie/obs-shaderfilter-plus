@@ -1,44 +1,38 @@
 #![feature(try_blocks)]
 #![feature(c_variadic)]
 #![feature(trait_alias)]
-#![feature(associated_type_bounds)]
+// #![feature(associated_type_bounds)] stable since ... 1.79
 
-use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{RwLock, Arc, Weak};
-use std::borrow::Cow;
-use std::time::Instant;
-use std::path::PathBuf;
-use std::fs::File;
-use std::ffi::{CStr, CString};
-use std::io::Read;
-use ordered_float::OrderedFloat;
-use lazy_static::lazy_static;
-use obs_wrapper::{
-    info::*,
-    context::*,
-    graphics::*,
-    obs_register_module,
-    prelude::*,
-    source::*,
-    audio::*,
-};
-use fourier::*;
-use num_complex::Complex;
-use util::*;
 use effect::*;
+use fourier::*;
+use lazy_static::lazy_static;
+use num_complex::Complex;
+use obs_wrapper::{
+    audio::*, context::*, graphics::*, info::*, obs_register_module, prelude::*, source::*,
+};
+use ordered_float::OrderedFloat;
 use preprocessor::*;
+use std::borrow::Cow;
+use std::collections::{HashMap, VecDeque};
+use std::ffi::{CStr, CString};
+use std::fs::File;
+use std::io::Read;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock, Weak};
+use std::time::Instant;
+use util::*;
 
 macro_rules! throw {
     ($e:expr) => {{
         Err($e)?;
         unreachable!()
-    }}
+    }};
 }
 
-mod util;
 mod effect;
 mod preprocessor;
+mod util;
 
 lazy_static! {
     static ref GLOBAL_STATE: GlobalState = Default::default();
@@ -76,12 +70,24 @@ impl WindowFunction {
 
         match self {
             None => std::iter::repeat(1.0).take(len).collect::<Vec<_>>(),
-            Blackman => blackman_iter(len).map(|coef| coef as f32).collect::<Vec<_>>(),
-            Cosine { a, b, c, d } => cosine_iter(*a, *b, *c, *d, len).map(|coef| coef as f32).collect::<Vec<_>>(),
-            Hamming => hamming_iter(len).map(|coef| coef as f32).collect::<Vec<_>>(),
-            Hanning => hanning_iter(len).map(|coef| coef as f32).collect::<Vec<_>>(),
-            Nuttall => nuttall_iter(len).map(|coef| coef as f32).collect::<Vec<_>>(),
-            Triangular => triangular_iter(len).map(|coef| coef as f32).collect::<Vec<_>>(),
+            Blackman => blackman_iter(len)
+                .map(|coef| coef as f32)
+                .collect::<Vec<_>>(),
+            Cosine { a, b, c, d } => cosine_iter(*a, *b, *c, *d, len)
+                .map(|coef| coef as f32)
+                .collect::<Vec<_>>(),
+            Hamming => hamming_iter(len)
+                .map(|coef| coef as f32)
+                .collect::<Vec<_>>(),
+            Hanning => hanning_iter(len)
+                .map(|coef| coef as f32)
+                .collect::<Vec<_>>(),
+            Nuttall => nuttall_iter(len)
+                .map(|coef| coef as f32)
+                .collect::<Vec<_>>(),
+            Triangular => triangular_iter(len)
+                .map(|coef| coef as f32)
+                .collect::<Vec<_>>(),
         }
     }
 }
@@ -149,10 +155,8 @@ pub struct GlobalStateAudioFFT {
 
 impl GlobalStateAudioFFT {
     fn get_samples_per_frame() -> usize {
-        let audio_info = ObsAudioInfo::get()
-            .expect("Audio info not accessible.");
-        let video_info = ObsVideoInfo::get()
-            .expect("Video info not accessible.");
+        let audio_info = ObsAudioInfo::get().expect("Audio info not accessible.");
+        let video_info = ObsVideoInfo::get().expect("Video info not accessible.");
         let framerate = video_info.framerate();
 
         (audio_info.samples_per_second() as usize * framerate.denominator as usize)
@@ -160,31 +164,35 @@ impl GlobalStateAudioFFT {
     }
 
     fn render_frames_to_time_elapsed(render_frames: usize) -> f64 {
-        let video_info = ObsVideoInfo::get()
-            .expect("Video info not accessible.");
+        let video_info = ObsVideoInfo::get().expect("Video info not accessible.");
         let framerate = video_info.framerate();
 
         (render_frames as f64 * framerate.denominator as f64) / framerate.numerator as f64
     }
 
     fn perform_analysis(
-        samples: impl Iterator<Item=f32> + ExactSizeIterator,
+        samples: impl Iterator<Item = f32> + ExactSizeIterator,
         window: &[f32],
     ) -> Vec<f32> {
         assert_eq!(samples.len(), window.len());
 
         let len = samples.len();
-        let mut fft_data: Vec<Complex<f32>> = samples.zip(window.iter()).map(|(sample, window_coefficient)| {
-            Complex::new(sample * window_coefficient, 0.0)
-        }).collect::<Vec<_>>();
+        let mut fft_data: Vec<Complex<f32>> = samples
+            .zip(window.iter())
+            .map(|(sample, window_coefficient)| Complex::new(sample * window_coefficient, 0.0))
+            .collect::<Vec<_>>();
         let fft = fourier::create_fft_f32(len);
 
         fft.transform_in_place(&mut fft_data, Transform::Fft);
 
-        fft_data.into_iter().take(len / 2).map(|complex| {
-            // normalize according to https://www.sjsu.edu/people/burford.furman/docs/me120/FFT_tutorial_NI.pdf
-            (complex.norm() * 4.0 / len as f32).sqrt()
-        }).collect::<Vec<_>>()
+        fft_data
+            .into_iter()
+            .take(len / 2)
+            .map(|complex| {
+                // normalize according to https://www.sjsu.edu/people/burford.furman/docs/me120/FFT_tutorial_NI.pdf
+                (complex.norm() * 4.0 / len as f32).sqrt()
+            })
+            .collect::<Vec<_>>()
     }
 
     fn process_audio_data<'a>(this: &Weak<Self>, audio_data: AudioData<'a, ()>) {
@@ -197,12 +205,13 @@ impl GlobalStateAudioFFT {
 
         let mut mutable_write = this.mutable.write().unwrap();
 
-        let current_samples = if let Some(samples) = audio_data.samples_normalized(this.descriptor.channel) {
-            samples
-        } else {
-            // No samples captured, bail.
-            return;
-        };
+        let current_samples =
+            if let Some(samples) = audio_data.samples_normalized(this.descriptor.channel) {
+                samples
+            } else {
+                // No samples captured, bail.
+                return;
+            };
 
         mutable_write.sample_buffer.extend(current_samples);
 
@@ -224,24 +233,40 @@ impl GlobalStateAudioFFT {
 
         if render_frames_accumulated > 0 {
             if mutable_write.window.len() != samples_per_frame {
-                mutable_write.window = Arc::new(this.descriptor.window_function.generate_coefficients(samples_per_frame));
+                mutable_write.window = Arc::new(
+                    this.descriptor
+                        .window_function
+                        .generate_coefficients(samples_per_frame),
+                );
             }
 
             let window = mutable_write.window.clone();
-            let current_accumulated_samples = mutable_write.sample_buffer.drain(0..samples_per_frame);
+            let current_accumulated_samples =
+                mutable_write.sample_buffer.drain(0..samples_per_frame);
             let mut analysis_result = Self::perform_analysis(current_accumulated_samples, &window);
 
             // Dampen the result by mixing it with the result from the previous batch
-            if *this.descriptor.dampening_factor_attack > 0.0 || *this.descriptor.dampening_factor_release > 0.0 {
+            if *this.descriptor.dampening_factor_attack > 0.0
+                || *this.descriptor.dampening_factor_release > 0.0
+            {
                 if let Some(previous_result) = mutable_write.result.as_ref() {
-                    let dampening_multiplier_attack = this.descriptor.dampening_factor_attack.powf(
-                        Self::render_frames_to_time_elapsed(render_frames_accumulated)
-                    ).clamp(0.0, 1.0) as f32;
-                    let dampening_multiplier_release = this.descriptor.dampening_factor_release.powf(
-                        Self::render_frames_to_time_elapsed(render_frames_accumulated)
-                    ).clamp(0.0, 1.0) as f32;
+                    let dampening_multiplier_attack =
+                        this.descriptor
+                            .dampening_factor_attack
+                            .powf(Self::render_frames_to_time_elapsed(
+                                render_frames_accumulated,
+                            ))
+                            .clamp(0.0, 1.0) as f32;
+                    let dampening_multiplier_release =
+                        this.descriptor
+                            .dampening_factor_release
+                            .powf(Self::render_frames_to_time_elapsed(
+                                render_frames_accumulated,
+                            ))
+                            .clamp(0.0, 1.0) as f32;
 
-                    analysis_result.iter_mut()
+                    analysis_result
+                        .iter_mut()
                         .zip(previous_result.frequency_spectrum.iter())
                         .for_each(move |(current, previous)| {
                             let dampening_multiplier = if *current > *previous {
@@ -250,18 +275,24 @@ impl GlobalStateAudioFFT {
                                 dampening_multiplier_release
                             };
 
-                            *current = dampening_multiplier * *previous + (1.0 - dampening_multiplier) * *current;
+                            *current = dampening_multiplier * *previous
+                                + (1.0 - dampening_multiplier) * *current;
                         })
                 }
             }
 
-            let next_batch_number = mutable_write.result.as_ref()
-                .map(|result| result.batch_number + 1).unwrap_or(0);
+            let next_batch_number = mutable_write
+                .result
+                .as_ref()
+                .map(|result| result.batch_number + 1)
+                .unwrap_or(0);
             mutable_write.result = Some(FFTResult {
                 batch_number: next_batch_number,
                 frequency_spectrum: Arc::new(analysis_result),
             });
-            mutable_write.next_batch_scheduled.swap(false, Ordering::SeqCst);
+            mutable_write
+                .next_batch_scheduled
+                .swap(false, Ordering::SeqCst);
         }
     }
 }
@@ -277,16 +308,13 @@ impl GlobalStateComponentType for GlobalStateAudioFFT {
             mutable: Default::default(),
         });
 
-        let audio_output = audio.connect_output(
-            descriptor.mix,
-            {
-                let self_cloned = Arc::downgrade(&result);
+        let audio_output = audio.connect_output(descriptor.mix, {
+            let self_cloned = Arc::downgrade(&result);
 
-                Box::new(move |audio_data| {
-                    Self::process_audio_data(&self_cloned, audio_data);
-                })
-            },
-        );
+            Box::new(move |audio_data| {
+                Self::process_audio_data(&self_cloned, audio_data);
+            })
+        });
 
         result.mutable.write().unwrap().audio_output = Some(audio_output);
 
@@ -296,7 +324,9 @@ impl GlobalStateComponentType for GlobalStateAudioFFT {
     fn retrieve_result(self: &Arc<Self>) -> Option<Self::Result> {
         let mutable_read = self.mutable.read().unwrap();
 
-        mutable_read.next_batch_scheduled.store(true, Ordering::SeqCst);
+        mutable_read
+            .next_batch_scheduled
+            .store(true, Ordering::SeqCst);
         mutable_read.result.clone()
     }
 }
@@ -351,7 +381,8 @@ impl<T: GlobalStateComponentType> GlobalStateComponent<T> {
 }
 
 pub struct GlobalState {
-    pub audio_ffts: RwLock<HashMap<GlobalStateAudioFFTDescriptor, GlobalStateComponent<GlobalStateAudioFFT>>>,
+    pub audio_ffts:
+        RwLock<HashMap<GlobalStateAudioFFTDescriptor, GlobalStateComponent<GlobalStateAudioFFT>>>,
 }
 
 impl Default for GlobalState {
@@ -363,7 +394,10 @@ impl Default for GlobalState {
 }
 
 impl GlobalState {
-    fn request_audio_fft(&self, descriptor: &GlobalStateAudioFFTDescriptor) -> Arc<GlobalStateAudioFFT> {
+    fn request_audio_fft(
+        &self,
+        descriptor: &GlobalStateAudioFFTDescriptor,
+    ) -> Arc<GlobalStateAudioFFT> {
         {
             let audio_ffts_read = self.audio_ffts.read().unwrap();
 
@@ -397,8 +431,7 @@ struct Data {
     effect: Option<PreparedEffect>,
     effect_fallback_blit: GraphicsContextDependentDisabled<GraphicsEffect>,
 
-    signal_callback_enable: EnableSignalCallbackHandle,
-
+    // signal_callback_enable: EnableSignalCallbackHandle,
     creation: Instant,
     shown_at: Option<Instant>,
     enabled_at: Option<Instant>,
@@ -421,19 +454,20 @@ impl Data {
     pub fn new(source: SourceContext) -> Self {
         let settings_update_requested = Arc::new(AtomicBool::new(true));
         let enabled = Arc::new(AtomicBool::new(false));
-        let enabled_clone = enabled.clone();
+        // let enabled_clone = enabled.clone();
 
         Self {
-            signal_callback_enable: source.on_signal_enable(Box::new(move |enabled_new| {
-                enabled_clone.store(enabled_new, Ordering::SeqCst);
-            })),
+            // signal_callback_enable: source.on_signal_enable(Box::new(move |enabled_new| {
+            //     enabled_clone.store(enabled_new, Ordering::SeqCst);
+            // })),
             source,
             effect: None,
             effect_fallback_blit: {
                 const EFFECT_SOURCE_FALLBACK: &'static str = include_str!("effect_fallback.effect");
 
-                let graphics_context = GraphicsContext::enter()
-                    .expect("Could not enter the graphics context to initialize the fallback effect.");
+                let graphics_context = GraphicsContext::enter().expect(
+                    "Could not enter the graphics context to initialize the fallback effect.",
+                );
 
                 let shader_path_c = CString::new("effect_fallback.effect").unwrap();
                 let effect_source_c = CString::new(EFFECT_SOURCE_FALLBACK)
@@ -443,7 +477,9 @@ impl Data {
                     effect_source_c.as_c_str(),
                     shader_path_c.as_c_str(),
                     &graphics_context,
-                ).unwrap().disable()
+                )
+                .unwrap()
+                .disable()
             },
             creation: Instant::now(),
             shown_at: None,
@@ -457,29 +493,29 @@ impl Data {
                 description: CString::new("The shader to use.").unwrap(),
                 specialization: PropertyDescriptorSpecializationPath {
                     path_type: PathType::File,
-                    filter: CString::from(cstr!("*.hlsl *.glsl *.frag *.fragment ;; All File Types | *.*")),
+                    filter: CString::from(cstr!(
+                        "*.hlsl *.glsl *.frag *.fragment ;; All File Types | *.*"
+                    )),
                     default_path: CString::from(cstr!("")),
                 },
             },
             property_shader_reload: PropertyDescriptor {
                 name: CString::new("builtin_ui_shader_reload").unwrap(),
                 description: CString::new("Reload Shader").unwrap(),
-                specialization: PropertyDescriptorSpecializationButton::new(
-                    Box::new({
-                        let settings_update_requested = settings_update_requested.clone();
-                        move || {
-                            settings_update_requested.store(true, Ordering::SeqCst);
-                            false
-                        }
-                    }),
-                )
+                specialization: PropertyDescriptorSpecializationButton::new(Box::new({
+                    let settings_update_requested = settings_update_requested.clone();
+                    move || {
+                        settings_update_requested.store(true, Ordering::SeqCst);
+                        false
+                    }
+                })),
             },
             property_message: PropertyDescriptor {
                 name: CString::new("builtin_ui_message").unwrap(),
                 description: CString::new("").unwrap(),
                 specialization: PropertyDescriptorSpecializationString {
                     string_type: StringType::Multiline,
-                }
+                },
             },
             property_message_display: false,
             settings_update_requested,
@@ -553,9 +589,13 @@ impl VideoTickSource<Data> for ShaderFilterPlus {
 
         let frame = data.next_frame;
         data.next_frame += 1;
-        let framerate = ObsVideoInfo::get().map(|info| info.framerate().as_f32()).unwrap_or(0.0);
+        let framerate = ObsVideoInfo::get()
+            .map(|info| info.framerate().as_f32())
+            .unwrap_or(0.0);
         let elapsed_time = data.creation.elapsed().as_secs_f32();
-        let elapsed_time_previous = data.elapsed_time_previous.replace(elapsed_time)
+        let elapsed_time_previous = data
+            .elapsed_time_previous
+            .replace(elapsed_time)
             .unwrap_or(elapsed_time);
         let now = Instant::now();
         let elapsed_time_since_shown = if data.shown {
@@ -586,10 +626,12 @@ impl VideoTickSource<Data> for ShaderFilterPlus {
 
             0.0
         };
-        let elapsed_time_since_shown_previous = data.elapsed_time_since_shown_previous
+        let elapsed_time_since_shown_previous = data
+            .elapsed_time_since_shown_previous
             .replace(elapsed_time_since_shown)
             .unwrap_or(elapsed_time_since_shown);
-        let elapsed_time_since_enabled_previous = data.elapsed_time_since_enabled_previous
+        let elapsed_time_since_enabled_previous = data
+            .elapsed_time_since_enabled_previous
             .replace(elapsed_time_since_enabled)
             .unwrap_or(elapsed_time_since_enabled);
 
@@ -599,11 +641,21 @@ impl VideoTickSource<Data> for ShaderFilterPlus {
             params.frame.prepare_value(frame as i32);
             params.framerate.prepare_value(framerate);
             params.elapsed_time.prepare_value(elapsed_time);
-            params.elapsed_time_previous.prepare_value(elapsed_time_previous);
-            params.elapsed_time_since_shown.prepare_value(elapsed_time_since_shown);
-            params.elapsed_time_since_shown_previous.prepare_value(elapsed_time_since_shown_previous);
-            params.elapsed_time_since_enabled.prepare_value(elapsed_time_since_enabled);
-            params.elapsed_time_since_enabled_previous.prepare_value(elapsed_time_since_enabled_previous);
+            params
+                .elapsed_time_previous
+                .prepare_value(elapsed_time_previous);
+            params
+                .elapsed_time_since_shown
+                .prepare_value(elapsed_time_since_shown);
+            params
+                .elapsed_time_since_shown_previous
+                .prepare_value(elapsed_time_since_shown_previous);
+            params
+                .elapsed_time_since_enabled
+                .prepare_value(elapsed_time_since_enabled);
+            params
+                .elapsed_time_since_enabled_previous
+                .prepare_value(elapsed_time_since_enabled_previous);
             params.uv_size.prepare_value([
                 data.source.get_base_width() as i32,
                 data.source.get_base_height() as i32,
@@ -617,17 +669,18 @@ impl VideoTickSource<Data> for ShaderFilterPlus {
             }
         }
 
-        if data.settings_update_requested.compare_and_swap(true, false, Ordering::SeqCst) {
+        if data
+            .settings_update_requested
+            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+            .unwrap()
+        {
             data.source.update_source_settings(settings);
         }
     }
 }
 
 impl VideoRenderSource<Data> for ShaderFilterPlus {
-    fn video_render(
-        mut context: PluginContext<Data>,
-        graphics_context: &mut GraphicsContext,
-    ) {
+    fn video_render(mut context: PluginContext<Data>, graphics_context: &mut GraphicsContext) {
         let data = if let Some(data) = context.data_mut().as_mut() {
             data
         } else {
@@ -646,7 +699,8 @@ impl VideoRenderSource<Data> for ShaderFilterPlus {
 
         let prepared_effect = if let Some(effect) = data.effect.as_mut() {
             effect
-        } else { // use the fallback effect
+        } else {
+            // use the fallback effect
             source.process_filter(
                 &mut data.effect_fallback_blit.as_enabled_mut(graphics_context),
                 (cx, cy),
@@ -680,9 +734,7 @@ impl CreatableSource<Data> for ShaderFilterPlus {
 }
 
 impl UpdateSource<Data> for ShaderFilterPlus {
-    fn update(
-        mut context: PluginContext<Data>,
-    ) {
+    fn update(mut context: PluginContext<Data>) {
         let result: Result<(), Cow<str>> = try {
             let (data, mut settings) = context.data_settings_mut();
             let data = data.as_mut().ok_or_else(|| "Could not access the data.")?;
@@ -693,25 +745,27 @@ impl UpdateSource<Data> for ShaderFilterPlus {
                 throw!("Please specify the shader source file.");
             }
 
-            let mut shader_file = File::open(&shader_path)
-                .map_err(|_| {
-                    if let Some(effect) = data.effect.take() {
-                        let graphics_context = GraphicsContext::enter()
-                            .expect("Could not enter a graphics context.");
+            let mut shader_file = File::open(&shader_path).map_err(|_| {
+                if let Some(effect) = data.effect.take() {
+                    let graphics_context =
+                        GraphicsContext::enter().expect("Could not enter a graphics context.");
 
-                        effect.enable_and_drop(&graphics_context);
-                    }
+                    effect.enable_and_drop(&graphics_context);
+                }
 
-                    format!("Shader not found at the specified path: {:?}", &shader_path)
-                })?;
+                format!("Shader not found at the specified path: {:?}", &shader_path)
+            })?;
             let shader_source = {
                 let mut shader_source = String::new();
-                shader_file.read_to_string(&mut shader_source).expect("Could not read the shader at the given path.");
+                shader_file
+                    .read_to_string(&mut shader_source)
+                    .expect("Could not read the shader at the given path.");
                 shader_source
             };
-            let old_shader_source = data.effect.as_ref().map(|old_effect| {
-                old_effect.shader_source.clone()
-            });
+            let old_shader_source = data
+                .effect
+                .as_ref()
+                .map(|old_effect| old_effect.shader_source.clone());
 
             if old_shader_source.is_some() && old_shader_source.unwrap() == shader_source {
                 // Only update the params, if the shader stayed the same
@@ -724,14 +778,16 @@ impl UpdateSource<Data> for ShaderFilterPlus {
 
             // If shader source changed, create a new effect and request to update properties
             let graphics_context = GraphicsContext::enter().unwrap();
-            let (effect, preprocess_result) = PreparedEffect::create_effect(&shader_path, &shader_source, &graphics_context)?;
+            let (effect, preprocess_result) =
+                PreparedEffect::create_effect(&shader_path, &shader_source, &graphics_context)?;
             let mut builtin_param_names = vec!["ViewProj", "image"];
 
             macro_rules! builtin_effect {
                 ($path:expr) => {{
                     builtin_param_names.push($path);
                     EffectParam::new(
-                        effect.get_param_by_name(cstr!($path))
+                        effect
+                            .get_param_by_name(cstr!($path))
                             .ok_or_else(|| {
                                 format!("Could not access built in effect parameter `{}`.", $path)
                             })?
@@ -739,9 +795,9 @@ impl UpdateSource<Data> for ShaderFilterPlus {
                             .ok_or_else(|| {
                                 format!("Incompatible effect parameter type `{}`.", $path)
                             })?
-                            .disable()
+                            .disable(),
                     )
-                }}
+                }};
             }
 
             let mut params = EffectParams {
@@ -750,21 +806,22 @@ impl UpdateSource<Data> for ShaderFilterPlus {
                 elapsed_time: builtin_effect!("builtin_elapsed_time"),
                 elapsed_time_previous: builtin_effect!("builtin_elapsed_time_previous"),
                 elapsed_time_since_shown: builtin_effect!("builtin_elapsed_time_since_shown"),
-                elapsed_time_since_shown_previous: builtin_effect!("builtin_elapsed_time_since_shown_previous"),
+                elapsed_time_since_shown_previous: builtin_effect!(
+                    "builtin_elapsed_time_since_shown_previous"
+                ),
                 elapsed_time_since_enabled: builtin_effect!("builtin_elapsed_time_since_enabled"),
-                elapsed_time_since_enabled_previous: builtin_effect!("builtin_elapsed_time_since_enabled_previous"),
+                elapsed_time_since_enabled_previous: builtin_effect!(
+                    "builtin_elapsed_time_since_enabled_previous"
+                ),
                 uv_size: builtin_effect!("builtin_uv_size"),
                 custom: Default::default(),
             };
 
-            let custom_params = effect.params_iter()
-                .filter(|item| {
-                    !builtin_param_names.contains(&item.name())
-                })
+            let custom_params = effect
+                .params_iter()
+                .filter(|item| !builtin_param_names.contains(&item.name()))
                 .enumerate()
-                .map(|(index, param)| {
-                    (param.name().to_string(), Indexed::from((index, param)))
-                })
+                .map(|(index, param)| (param.name().to_string(), Indexed::from((index, param))))
                 .collect::<HashMap<_, _>>();
 
             params.custom = EffectParamsCustom::from(custom_params, settings, &preprocess_result)?;
@@ -777,8 +834,8 @@ impl UpdateSource<Data> for ShaderFilterPlus {
 
             // Drop old effect before the new one is created.
             if let Some(old_effect) = data.effect.replace(effect) {
-                let graphics_context = GraphicsContext::enter()
-                    .expect("Could not enter a graphics context.");
+                let graphics_context =
+                    GraphicsContext::enter().expect("Could not enter a graphics context.");
                 old_effect.enable_and_drop(&graphics_context);
             }
 
@@ -789,7 +846,10 @@ impl UpdateSource<Data> for ShaderFilterPlus {
         };
 
         if let Err(error_message) = result {
-            println!("An error occurred while updating a ShaderFilter Plus filter: {}", error_message);
+            println!(
+                "An error occurred while updating a ShaderFilter Plus filter: {}",
+                error_message
+            );
 
             let (data, settings) = context.data_settings_mut();
 

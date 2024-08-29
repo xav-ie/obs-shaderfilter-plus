@@ -1,14 +1,12 @@
 #![allow(dead_code)]
 
-use std::sync::Mutex;
-use std::ffi::{VaList, CStr};
-use std::os::raw::{c_int, c_char, c_void, c_ulong};
-use std::sync::atomic::{self, AtomicBool};
-use obs_wrapper::obs_sys::{
-    LOG_ERROR, LOG_WARNING, LOG_INFO, LOG_DEBUG,
-};
+use obs_wrapper::obs_sys::{LOG_DEBUG, LOG_ERROR, LOG_INFO, LOG_WARNING};
 use std::cmp::Ordering;
+use std::ffi::{CStr, VaList};
 use std::ops::{Deref, DerefMut};
+use std::os::raw::{c_char, c_int, c_ulong, c_void};
+use std::sync::atomic::{self, AtomicBool};
+use std::sync::Mutex;
 
 pub struct Indexed<T> {
     pub index: usize,
@@ -35,18 +33,14 @@ impl<T> Indexed<T> {
 impl<T> Indexed<Option<T>> {
     pub fn transpose(self) -> Option<Indexed<T>> {
         let Indexed { index, inner } = self;
-        inner.map(|inner| {
-            Indexed { index, inner }
-        })
+        inner.map(|inner| Indexed { index, inner })
     }
 }
 
 impl<T, E> Indexed<Result<T, E>> {
     pub fn transpose(self) -> Result<Indexed<T>, E> {
         let Indexed { index, inner } = self;
-        inner.map(|inner| {
-            Indexed { index, inner }
-        })
+        inner.map(|inner| Indexed { index, inner })
     }
 }
 
@@ -76,8 +70,7 @@ impl<T> PartialEq for Indexed<T> {
     }
 }
 
-impl<T> Eq for Indexed<T> {
-}
+impl<T> Eq for Indexed<T> {}
 
 impl<T> PartialOrd for Indexed<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -166,7 +159,15 @@ pub struct LogCaptureHandler;
 
 impl LogCaptureHandler {
     pub fn new(min_log_level: LogLevel) -> Option<Self> {
-        if LOG_HANDLER_LOCK.compare_and_swap(false, true, atomic::Ordering::SeqCst) {
+        if LOG_HANDLER_LOCK
+            .compare_exchange(
+                false,
+                true,
+                atomic::Ordering::SeqCst,
+                atomic::Ordering::SeqCst,
+            )
+            .unwrap()
+        {
             return None;
         }
 
@@ -196,7 +197,11 @@ impl LogCaptureHandler {
                                 let capture_handler = capture_handler.as_mut().unwrap();
                                 let captured_log = &mut capture_handler.captured_log;
 
-                                *captured_log = format!("{}{}\n", captured_log.clone(), formatted.to_string_lossy());
+                                *captured_log = format!(
+                                    "{}{}\n",
+                                    captured_log.clone(),
+                                    formatted.to_string_lossy()
+                                );
                             }
                         });
 
@@ -240,9 +245,14 @@ impl Drop for LogCaptureHandler {
         let capture_handler = LOG_CAPTURE_HANDLER.lock().unwrap().take().unwrap();
 
         unsafe {
-            base_set_log_handler(capture_handler.handler_previous, capture_handler.param_previous);
+            base_set_log_handler(
+                capture_handler.handler_previous,
+                capture_handler.param_previous,
+            );
 
-            std::mem::drop(Box::from_raw(capture_handler.callback_ptr as *mut RedirectLogCallback));
+            std::mem::drop(Box::from_raw(
+                capture_handler.callback_ptr as *mut RedirectLogCallback,
+            ));
         }
 
         LOG_HANDLER_LOCK.store(false, atomic::Ordering::SeqCst);

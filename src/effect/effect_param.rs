@@ -1,9 +1,13 @@
-use std::sync::Arc;
-use std::borrow::Cow;
-use obs_wrapper::{obs_sys::MAX_AUDIO_MIXES, context::*, graphics::*, source::*};
-use smallvec::{SmallVec, smallvec};
-use paste::item;
 use crate::*;
+use obs_wrapper::{
+    // context::*, graphics::*,
+    obs_sys::MAX_AUDIO_MIXES,
+    // source::*
+};
+use paste::item;
+use smallvec::{smallvec, SmallVec};
+use std::borrow::Cow;
+use std::sync::Arc;
 
 /// Used to convert cloneable values into `ShaderParamType::RustType`.
 pub trait EffectParamType {
@@ -17,7 +21,12 @@ pub trait EffectParamType {
 
     fn assign_staged_value<'a, 'b>(
         staged: &'b <Self::ShaderParamType as ShaderParamType>::RustType,
-        param: &'b mut EnableGuardMut<'a, 'b, GraphicsEffectParamTyped<Self::ShaderParamType>, GraphicsContext>,
+        param: &'b mut EnableGuardMut<
+            'a,
+            'b,
+            GraphicsEffectParamTyped<Self::ShaderParamType>,
+            GraphicsContext,
+        >,
         context: &'b FilterContext,
     );
 }
@@ -59,15 +68,17 @@ impl Default for TextureDescriptor {
 pub type EffectParamTexture = EffectParam<EffectParamTypeTexture>;
 
 pub struct EffectParamTypeClone<T>
-    where T: ShaderParamType,
-          <T as ShaderParamType>::RustType: Default,
+where
+    T: ShaderParamType,
+    <T as ShaderParamType>::RustType: Default,
 {
     __marker: std::marker::PhantomData<T>,
 }
 
 impl<T> EffectParamType for EffectParamTypeClone<T>
-    where T: ShaderParamType,
-          <T as ShaderParamType>::RustType: Default,
+where
+    T: ShaderParamType,
+    <T as ShaderParamType>::RustType: Default,
 {
     type ShaderParamType = T;
     type PreparedValueType = <T as ShaderParamType>::RustType;
@@ -75,13 +86,19 @@ impl<T> EffectParamType for EffectParamTypeClone<T>
     fn convert_and_stage_value(
         prepared: Self::PreparedValueType,
         context: &GraphicsContext,
-    ) -> GraphicsContextDependentDisabled<<Self::ShaderParamType as ShaderParamType>::RustType> {
+    ) -> GraphicsContextDependentDisabled<<Self::ShaderParamType as ShaderParamType>::RustType>
+    {
         ContextDependent::new(prepared, context).disable()
     }
 
     fn assign_staged_value<'a, 'b>(
         staged: &'b <Self::ShaderParamType as ShaderParamType>::RustType,
-        param: &'b mut EnableGuardMut<'a, 'b, GraphicsEffectParamTyped<Self::ShaderParamType>, GraphicsContext>,
+        param: &'b mut EnableGuardMut<
+            'a,
+            'b,
+            GraphicsEffectParamTyped<Self::ShaderParamType>,
+            GraphicsContext,
+        >,
         context: &'b FilterContext,
     ) {
         param.set_param_value(&staged, context);
@@ -97,8 +114,13 @@ impl EffectParamType for EffectParamTypeTexture {
     fn convert_and_stage_value(
         prepared: Self::PreparedValueType,
         context: &GraphicsContext,
-    ) -> GraphicsContextDependentDisabled<<Self::ShaderParamType as ShaderParamType>::RustType> {
-        let levels: Vec<&[u8]> = prepared.levels.iter().map(|vec| &vec[..]).collect::<Vec<_>>();
+    ) -> GraphicsContextDependentDisabled<<Self::ShaderParamType as ShaderParamType>::RustType>
+    {
+        let levels: Vec<&[u8]> = prepared
+            .levels
+            .iter()
+            .map(|vec| &vec[..])
+            .collect::<Vec<_>>();
 
         Texture::new(
             prepared.dimensions,
@@ -106,12 +128,18 @@ impl EffectParamType for EffectParamTypeTexture {
             &levels,
             prepared.flags,
             context,
-        ).disable()
+        )
+        .disable()
     }
 
     fn assign_staged_value<'a, 'b>(
         staged: &'b <Self::ShaderParamType as ShaderParamType>::RustType,
-        param: &'b mut EnableGuardMut<'a, 'b, GraphicsEffectParamTyped<Self::ShaderParamType>, GraphicsContext>,
+        param: &'b mut EnableGuardMut<
+            'a,
+            'b,
+            GraphicsEffectParamTyped<Self::ShaderParamType>,
+            GraphicsContext,
+        >,
         context: &'b FilterContext,
     ) {
         param.set_param_value(&staged, context);
@@ -123,13 +151,23 @@ impl EffectParamType for EffectParamTypeTexture {
 /// It creates a graphics resource from the _prepared value_, if it was changed, and stores the result (see `stage_value`).
 /// It assigns the staged values to filters (see `assign_value`).
 pub struct EffectParam<T: EffectParamType> {
-    pub param: GraphicsContextDependentDisabled<GraphicsEffectParamTyped<<T as EffectParamType>::ShaderParamType>>,
+    pub param: GraphicsContextDependentDisabled<
+        GraphicsEffectParamTyped<<T as EffectParamType>::ShaderParamType>,
+    >,
     pub prepared_value: Option<T::PreparedValueType>,
-    pub staged_value: Option<GraphicsContextDependentDisabled<<<T as EffectParamType>::ShaderParamType as ShaderParamType>::RustType>>,
+    pub staged_value: Option<
+        GraphicsContextDependentDisabled<
+            <<T as EffectParamType>::ShaderParamType as ShaderParamType>::RustType,
+        >,
+    >,
 }
 
 impl<T: EffectParamType> EffectParam<T> {
-    pub fn new(param: GraphicsContextDependentDisabled<GraphicsEffectParamTyped<<T as EffectParamType>::ShaderParamType>>) -> Self {
+    pub fn new(
+        param: GraphicsContextDependentDisabled<
+            GraphicsEffectParamTyped<<T as EffectParamType>::ShaderParamType>,
+        >,
+    ) -> Self {
         Self {
             param,
             prepared_value: Some(Default::default()),
@@ -146,29 +184,46 @@ impl<T: EffectParamType> EffectParam<T> {
     /// to be used in effect filter processing.
     pub fn stage_value<'a>(&mut self, graphics_context: &'a GraphicsContext) {
         if let Some(prepared_value) = self.prepared_value.take() {
-            if let Some(previous) = self.staged_value.replace(<T as EffectParamType>::convert_and_stage_value(
-                prepared_value,
-                graphics_context,
-            )) {
+            if let Some(previous) =
+                self.staged_value
+                    .replace(<T as EffectParamType>::convert_and_stage_value(
+                        prepared_value,
+                        graphics_context,
+                    ))
+            {
                 previous.enable(graphics_context);
             }
         }
     }
 
-    pub fn stage_value_custom<'a>(&mut self, value: GraphicsContextDependentDisabled<<<T as EffectParamType>::ShaderParamType as ShaderParamType>::RustType>, graphics_context: &'a GraphicsContext) {
+    pub fn stage_value_custom<'a>(
+        &mut self,
+        value: GraphicsContextDependentDisabled<
+            <<T as EffectParamType>::ShaderParamType as ShaderParamType>::RustType,
+        >,
+        graphics_context: &'a GraphicsContext,
+    ) {
         if let Some(previous) = self.staged_value.replace(value) {
             previous.enable(graphics_context);
         }
     }
 
-    pub fn take_staged_value(&mut self) -> Option<GraphicsContextDependentDisabled<<<T as EffectParamType>::ShaderParamType as ShaderParamType>::RustType>> {
+    pub fn take_staged_value(
+        &mut self,
+    ) -> Option<
+        GraphicsContextDependentDisabled<
+            <<T as EffectParamType>::ShaderParamType as ShaderParamType>::RustType,
+        >,
+    > {
         self.staged_value.take()
     }
 
     /// Assigns the staged value to the effect current filter.
     /// Keeps the staged value around.
     pub fn assign_value<'a>(&mut self, context: &'a FilterContext) {
-        let staged_value = self.staged_value.as_ref()
+        let staged_value = self
+            .staged_value
+            .as_ref()
             .expect("Tried to assign a value before staging it.")
             .as_enabled(context.graphics());
 
@@ -209,7 +264,7 @@ pub trait EffectParamCustom: BindableProperty + Sized {
 
 pub struct EffectParamCustomBool {
     pub effect_param: EffectParamBool,
-    pub property: LoadedValueTypeProperty<LoadedValueTypePropertyDescriptorBool>
+    pub property: LoadedValueTypeProperty<LoadedValueTypePropertyDescriptorBool>,
 }
 
 impl EffectParamCustom for EffectParamCustomBool {
@@ -271,7 +326,7 @@ impl BindableProperty for EffectParamCustomBool {
 
 pub struct EffectParamCustomInt {
     pub effect_param: EffectParamInt,
-    pub property: LoadedValueTypeProperty<LoadedValueTypePropertyDescriptorI32>
+    pub property: LoadedValueTypeProperty<LoadedValueTypePropertyDescriptorI32>,
 }
 
 impl EffectParamCustom for EffectParamCustomInt {
@@ -338,7 +393,7 @@ impl BindableProperty for EffectParamCustomInt {
 
 pub struct EffectParamCustomFloat {
     pub effect_param: EffectParamFloat,
-    pub property: LoadedValueTypeProperty<LoadedValueTypePropertyDescriptorF64>
+    pub property: LoadedValueTypeProperty<LoadedValueTypePropertyDescriptorF64>,
 }
 
 impl EffectParamCustom for EffectParamCustomFloat {
@@ -385,7 +440,8 @@ impl BindableProperty for EffectParamCustomFloat {
 
     fn reload_settings(&mut self, settings: &mut SettingsContext) {
         self.property.reload_settings(settings);
-        self.effect_param.prepare_value(self.property.get_value() as f32);
+        self.effect_param
+            .prepare_value(self.property.get_value() as f32);
     }
 
     fn prepare_values(&mut self) {}
@@ -405,7 +461,7 @@ impl BindableProperty for EffectParamCustomFloat {
 
 pub struct EffectParamCustomColor {
     pub effect_param: EffectParamVec4,
-    pub property: LoadedValueTypeProperty<LoadedValueTypePropertyDescriptorColor>
+    pub property: LoadedValueTypeProperty<LoadedValueTypePropertyDescriptorColor>,
 }
 
 impl EffectParamCustom for EffectParamCustomColor {
@@ -447,7 +503,8 @@ impl BindableProperty for EffectParamCustomColor {
 
     fn reload_settings(&mut self, settings: &mut SettingsContext) {
         self.property.reload_settings(settings);
-        self.effect_param.prepare_value((self.property.get_value() as Color).into());
+        self.effect_param
+            .prepare_value((self.property.get_value() as Color).into());
     }
 
     fn prepare_values(&mut self) {}
@@ -471,15 +528,22 @@ pub struct EffectParamCustomFFT {
     pub audio_fft: Option<Arc<GlobalStateAudioFFT>>,
     pub property_mix: LoadedValueTypeProperty<LoadedValueTypePropertyDescriptorI32>,
     pub property_channel: LoadedValueTypeProperty<LoadedValueTypePropertyDescriptorI32>,
-    pub property_dampening_factor_attack: LoadedValueTypeProperty<LoadedValueTypePropertyDescriptorF64>,
-    pub property_dampening_factor_release: LoadedValueTypeProperty<LoadedValueTypePropertyDescriptorF64>,
+    pub property_dampening_factor_attack:
+        LoadedValueTypeProperty<LoadedValueTypePropertyDescriptorF64>,
+    pub property_dampening_factor_release:
+        LoadedValueTypeProperty<LoadedValueTypePropertyDescriptorF64>,
 }
 
 // Does not implement EffectParamCustom because of different argument requirements
 impl EffectParamCustomFFT {
     pub fn new<'a>(
-        param: GraphicsContextDependentEnabled<'a, GraphicsEffectParamTyped<ShaderParamTypeTexture>>,
-        param_previous: Option<GraphicsContextDependentEnabled<'a, GraphicsEffectParamTyped<ShaderParamTypeTexture>>>,
+        param: GraphicsContextDependentEnabled<
+            'a,
+            GraphicsEffectParamTyped<ShaderParamTypeTexture>,
+        >,
+        param_previous: Option<
+            GraphicsContextDependentEnabled<'a, GraphicsEffectParamTyped<ShaderParamTypeTexture>>,
+        >,
         identifier: &str,
         settings: &mut SettingsContext,
         preprocess_result: &PreprocessResult,
@@ -516,51 +580,54 @@ impl EffectParamCustomFFT {
             preprocess_result,
             settings,
         )?;
-        let property_dampening_factor_attack = <LoadedValueTypeProperty<_> as LoadedValueType>::from(
-            LoadedValueTypePropertyArgs {
-                allow_definitions_in_source: true,
-                default_value: 0.0,
-                default_descriptor_specialization: PropertyDescriptorSpecializationF64 {
-                    min: 0.0,
-                    max: 100.0,
-                    step: 0.01,
-                    slider: true,
+        let property_dampening_factor_attack =
+            <LoadedValueTypeProperty<_> as LoadedValueType>::from(
+                LoadedValueTypePropertyArgs {
+                    allow_definitions_in_source: true,
+                    default_value: 0.0,
+                    default_descriptor_specialization: PropertyDescriptorSpecializationF64 {
+                        min: 0.0,
+                        max: 100.0,
+                        step: 0.01,
+                        slider: true,
+                    },
                 },
-            },
-            identifier,
-            Some("dampening_factor_attack"),
-            preprocess_result,
-            settings,
-        )?;
-        let property_dampening_factor_release = <LoadedValueTypeProperty<_> as LoadedValueType>::from(
-            LoadedValueTypePropertyArgs {
-                allow_definitions_in_source: true,
-                default_value: 0.0,
-                default_descriptor_specialization: PropertyDescriptorSpecializationF64 {
-                    min: 0.0,
-                    max: 100.0,
-                    step: 0.01,
-                    slider: true,
+                identifier,
+                Some("dampening_factor_attack"),
+                preprocess_result,
+                settings,
+            )?;
+        let property_dampening_factor_release =
+            <LoadedValueTypeProperty<_> as LoadedValueType>::from(
+                LoadedValueTypePropertyArgs {
+                    allow_definitions_in_source: true,
+                    default_value: 0.0,
+                    default_descriptor_specialization: PropertyDescriptorSpecializationF64 {
+                        min: 0.0,
+                        max: 100.0,
+                        step: 0.01,
+                        slider: true,
+                    },
                 },
-            },
-            identifier,
-            Some("dampening_factor_release"),
-            preprocess_result,
-            settings,
-        )?;
+                identifier,
+                Some("dampening_factor_release"),
+                preprocess_result,
+                settings,
+            )?;
 
-        let audio_fft_descriptor = GlobalStateAudioFFTDescriptor::new(
-            property_mix.get_value() as usize - 1,
-            property_channel.get_value() as usize - 1,
-            property_dampening_factor_attack.get_value() / 100.0,
-            property_dampening_factor_release.get_value() / 100.0,
-            // TODO: Make customizable, but provide a sane default value
-            WindowFunction::Hanning,
-        );
+        // let audio_fft_descriptor = GlobalStateAudioFFTDescriptor::new(
+        //     property_mix.get_value() as usize - 1,
+        //     property_channel.get_value() as usize - 1,
+        //     property_dampening_factor_attack.get_value() / 100.0,
+        //     property_dampening_factor_release.get_value() / 100.0,
+        //     // TODO: Make customizable, but provide a sane default value
+        //     WindowFunction::Hanning,
+        // );
 
         let mut result = Self {
             effect_param: EffectParam::new(param.disable()),
-            effect_param_previous: param_previous.map(|param_previous| EffectParam::new(param_previous.disable())),
+            effect_param_previous: param_previous
+                .map(|param_previous| EffectParam::new(param_previous.disable())),
             audio_fft: None,
             property_mix,
             property_channel,
@@ -591,15 +658,19 @@ impl BindableProperty for EffectParamCustomFFT {
     fn add_properties(&self, properties: &mut Properties) {
         self.property_mix.add_properties(properties);
         self.property_channel.add_properties(properties);
-        self.property_dampening_factor_attack.add_properties(properties);
-        self.property_dampening_factor_release.add_properties(properties);
+        self.property_dampening_factor_attack
+            .add_properties(properties);
+        self.property_dampening_factor_release
+            .add_properties(properties);
     }
 
     fn reload_settings(&mut self, settings: &mut SettingsContext) {
         self.property_mix.reload_settings(settings);
         self.property_channel.reload_settings(settings);
-        self.property_dampening_factor_attack.reload_settings(settings);
-        self.property_dampening_factor_release.reload_settings(settings);
+        self.property_dampening_factor_attack
+            .reload_settings(settings);
+        self.property_dampening_factor_release
+            .reload_settings(settings);
         self.request_audio_fft();
     }
 
@@ -615,7 +686,10 @@ impl BindableProperty for EffectParamCustomFFT {
                 frequency_spectrum.as_ptr() as *const _,
                 frequency_spectrum.len() * std::mem::size_of::<f32>(),
             )
-        }.iter().copied().collect::<Vec<_>>();
+        }
+        .iter()
+        .copied()
+        .collect::<Vec<_>>();
         let texture_fft = TextureDescriptor {
             dimensions: [frequency_spectrum.len(), 1],
             color_format: ColorFormatKind::R32F,
