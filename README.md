@@ -178,6 +178,12 @@ These properties can be applied to any user-defined uniform variable.
 5. Compile using `cargo build --release`
 6. Move `target/release/libobs_shaderfilter_plus.so` to the OBS plugin directory.
 
+--- 
+### Linux alternative
+1. Install `nix`
+2. `nix-shell`
+3. `cargo build --release`
+
 ### Tips on building OBS (fish shell, Ubuntu)
 These steps should not be necessary if you just want to compile OBS ShaderFilter Plus from source.
 
